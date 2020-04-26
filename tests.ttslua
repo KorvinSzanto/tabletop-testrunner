@@ -1,0 +1,129 @@
+-- Local logger function map
+local logger = {
+  success = function(message) log(message, '', 'testsuccess') end,
+  error = function(message) log(message, '', 'testerror') end,
+  info = function(message) log(message, '', 'testinfo') end
+}
+
+-- Tests instance, use `_tests.run()` to run tests
+_tests = {
+  success = nil,
+  stats = {
+    succeeded = 0,
+    failed = 0
+  },
+  runningTest = nil,
+
+  -- Error handler. This is a separate function just to make navigating to this error less confusing
+  assertFailed = function(message)
+    -- [ The actual location of this error would be the most recently run test. ]
+     error('Assertion failure in ' .. _tests.runningTest)
+  end,
+
+  -- Simple assertion
+  --   assert(function() return false end) -- fails
+  --   assert(function() return true end)  -- succeeds
+  --   assert(false, 'Optional message')   -- fails
+  --   assert(true)                        -- succeeds
+  assert = function(result, errorMessage)
+      local hasError = false
+      if type(result) == 'boolean' and result == false then
+        hasError = true
+      elseif type(result) == 'function' and result() == false then
+        hasError = true
+      end
+
+      if hasError then
+        _tests.success = false
+        _tests.stats.failed = _tests.stats.failed + 1
+
+        local message = '    !! Assert Failed' .. (errorMessage ~= nil and ': ' .. errorMessage or '')
+        logger.error(message)
+        _tests.assertFailed(message)
+      else
+        _tests.success = true
+        _tests.stats.succeeded = _tests.stats.succeeded + 1
+        logger.success('    ++ Assert Passed')
+      end
+  end,
+
+  -- More complex assertion with actual comparisons, supports primatives and tables
+  --   assertEquals(1, 2) -- fails
+  --   assertEquals(2, 2) -- Succeeds
+  --   assertEquals(vector(1, 2, 3), vector(1, 2, 3)) -- Succeeds
+  assertEquals = function(expected, actual)
+    local expectedType = type(expected)
+    local actualType = type(actual)
+
+    if expectedType ~= actualType then
+      return _tests.assert(false, 'Type mismatch')
+    end
+
+    if expectedType == 'table' then
+      expected = JSON.encode(expected)
+      actual = JSON.encode(actual)
+    end
+
+    local isPrimative = expectedType == 'string' or expectedType == 'float' or expectedType == 'number'
+    if (expectedType == 'table' or isPrimative) and expected ~= actual then
+      return _tests.assert(false, 'Value mismatch: "' .. expected .. '" expected, got "' .. actual .. '"')
+    else
+      _tests.assert(true, 'Values matched')
+    end
+  end,
+}
+
+-- Actual run function, call this onLoad in development
+function _tests.run(allowFailures)
+  logStyle('testerror', 'Red', '', '')
+  logStyle('testsuccess', 'Green', '', '')
+  logStyle('testinfo', 'Brown', '', '')
+
+  _tests.success = true
+  _tests.stats.succeeded = 0
+  _tests.stats.failed = 0
+  local skipRest = false
+
+  -- Iterate over all _tests members
+  for name, callable in pairs(_tests) do
+    -- Identify runnable tests by the `test` prefix, so `testFoo` will run `foo` will not
+    if string.sub(name, 0, 4) == 'test' then
+      if skipRest == true then
+        -- This happens when tests have already failed unless allowFailures is true
+        logger.info('-- Skipping ' .. string.sub(name, 5) .. '')
+      else
+        -- Actually run the test
+        _tests.runningTest = name
+        log('-- Running ' .. string.sub(name, 5) .. ' test')
+
+        -- Reset status tracker to success for the duration of this test so
+        -- that we can see if this specific test fails
+        local oldSuccess = _tests.success
+        _tests.success = true
+
+        -- Run the test, this should contain a bunch of assert() calls
+        _tests[name]()
+
+        if _tests.success == false then
+          logger.error('  !! Failed!\n')
+          _tests.success = false
+          if allowFailures ~= true then
+            skipRest = true
+          end
+        else
+          logger.success('\n')
+          _tests.success = oldSuccess
+        end
+      end
+    end
+  end
+
+  if _tests.success == false then
+    logger.error('Tests Failed: ' .. _tests.stats.succeeded .. ' passed, ' .. _tests.stats.failed .. ' failed.')
+  else
+    logger.success('Tests Passed')
+    broadcastToAll(' -- Tests Passed! --', 'Green')
+  end
+
+  _tests.success = nil
+end

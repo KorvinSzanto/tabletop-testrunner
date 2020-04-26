@@ -1,0 +1,30 @@
+require('testrunner/tests')
+
+_tests = _tests ~= nil and _tests or {}
+-- Configure testing here
+local test = true
+
+function onLoad(save)
+  if test and _tests.run ~= nil then
+    _tests.run()
+  end
+end
+
+-- Example function that will have a test
+function exampleFunctionWithTests(foo)
+  if foo < 0 then
+    foo = foo * -1
+  end
+  return foo * 2
+end
+
+-- A test for our function
+_tests.testExampleFunctionWithTests = function()
+  _tests.assertEquals(2, exampleFunctionWithTests(1))
+  _tests.assertEquals(2, exampleFunctionWithTests(-1))
+  _tests.assertEquals(200, exampleFunctionWithTests(100))
+  _tests.assertEquals(200, exampleFunctionWithTests(-100))
+
+  -- This one fails
+  _tests.assert(exampleFunctionWithTests(1) == -1)
+end
